@@ -5,12 +5,16 @@ import math
 import numpy as np
 import pandas as pd
 
+# ================================================================================================
+# ==== Preparing Data ============================================================================
+# ================================================================================================
+
 # import the dataset
 
 # Dataset downloaded from: https://download.data.world/datapackage/environmentdata/iris-species
 df = pd.read_csv("iris.csv")
 
-# fetch all features into different sets
+# fetch all features into different lists
 
 id = df['id'].values
 f1 = df['sepallengthcm'].values
@@ -25,7 +29,6 @@ original_data = np.array(list(zip(id, species, f1, f2, f3, f4)))
 # data array with only the features which will be used to cluster the data
 data = np.array(list(zip(f1, f2, f3, f4)))
 
-
 # ================================================================================================
 # ==== Helper functions ==========================================================================
 # ================================================================================================
@@ -33,20 +36,23 @@ data = np.array(list(zip(f1, f2, f3, f4)))
 
 def init_centroids(k, data):
     '''
-    This function will be used to initialize the centroids once in the beginning.
+        This function will be used to initialize the centroids once in the beginning.
 
-    Centroids will be randomly chosen as points(features) from the dataset, as this provides faster
-    convergence. Another implementation
-    can be assigning completely random numbers as centroids, but this is dangerous.
+        Centroids will be randomly chosen as points(features) from the dataset, as this provides faster
+        convergence. Another implementation
+        can be assigning completely random numbers as centroids, but this is dangerous.
 
-    :param k: (int) number of centroids
-    :param data: (np-array) containing the features of the dataset
-    :return: (list) 'k' number of randomly selected centroids from the dataset
-    '''
+        :param k: (int) number of centroids
+        :param data: (np-array) containing the features of the dataset
+        :return: (list) 'k' number of randomly selected centroids from the dataset
+        '''
     c = []
+    # Generate a list of k random numbers between 0 and the # of features of dataset
     s = np.random.randint(low=1, high=len(data), size=k)
+    # Check if all members of 's' are unique, if not, generate again
     while (len(s) != len(set(s))):
         s = np.random.randint(low=1, high=len(data), size=k)
+    # For every i in s, get ith feature from dataset, and add it to list
     for i in s:
         c.append(data[i])
     return c
@@ -81,6 +87,7 @@ def cal_dist(centroids, data):
     :return: (list) containing the distances of each point w.r.t. each centroid
     '''
     c_dist = []
+    # For each centroid c, iterate through all points in data to calculate its distance from c
     for i in centroids:
         temp = []
         for j in data:
@@ -125,18 +132,46 @@ def update_centroids(centroids, cluster_table, data):
     :return: (list) containing updated position of centroids
     '''
     for i in range(len(centroids)):
+        # Update the centroid if there are some flowers within this centroid
         if (len(cluster_table[i]) > 0):
             temp = []
+            # Copy features of cluster members to temp list
             for j in cluster_table[i]:
                 temp.append(list(data[j]))
-
+            # Take mean of features of all members of cluster to get new centroid location
             sum = [0] * len(centroids[i])
             for l in temp:
                 sum = [(a + b) for a, b in zip(sum, l)]
-
             centroids[i] = [p / len(temp) for p in sum]
+
     return centroids
 
+
+def check_n_stop(dist_mem, cluster_mem):
+    '''
+    This function will check if the stopping criteria has been met
+
+    This function will help to check if there is a convergence to a solution, with the help of
+    specified stopping criterias:
+    In case of Iris-Dataset, we can use the following stopping criterias:
+    --[1] The euclidean distances/distance table stays unchanged for 2 or more iterations.
+    --[2] The cluster table stays unchanged for two or more iterations, i.e. no flower migrations
+
+    :param dist_table: (list) containing the distances of each point w.r.t. each centroid
+    :param cluster_table: (list) containing clusters and indexes of respective members
+    :return: True, if stopping criteria is met, else False.
+    '''
+
+    # Check if distance table has not changed over past iterations
+    c1 = all(x == dist_mem[0] for x in dist_mem)
+    # Check if cluster table has not changed over past iterations
+    c2 = all(y == cluster_mem[0] for y in cluster_mem)
+
+    if c1:
+        print("Stopping... Distance table has not changed from few iterations")
+    elif c2:
+        print("Stopping... Cluster table has not changed from few iterations")
+    return c1 or c2
 
 # ================================================================================================
 # ==== K-Means ===================================================================================
@@ -159,15 +194,41 @@ def kMeans(k, data, max_iterations):
     :param max_iterations: (int) number of maximum iterations allowed.
     :return: none
     '''
+
+    # These lists will maintain memory to check if stopping criteria is met
+    dist_mem = []
+    cluster_mem = []
+
+    # Initialize centroids
     centroids = init_centroids(k, data)
+    # Calculate distance table
     distance_table = cal_dist(centroids, data)
+    # Perform clustering based on above generated distance table
     cluster_table = perf_clustering(k, distance_table)
+    # Update centroid location based on above generated cluster table
     newCentroids = update_centroids(centroids, cluster_table, data)
 
+    # Add distance and cluster table to memory list
+    dist_mem.append(distance_table)
+    cluster_mem.append(cluster_table)
+
+    # Repeat from step 2 till stopping criteria is met
     for i in range(max_iterations):
         distance_table = cal_dist(newCentroids, data)
         cluster_table = perf_clustering(k, distance_table)
         newCentroids = update_centroids(newCentroids, cluster_table, data)
+
+        # Check for stopping criteria
+        # Maintain memory for past distance table and cluster table
+        dist_mem.append(distance_table)
+        cluster_mem.append(cluster_table)
+        # If distance/cluster has not changed over last 10 iterations, stop, else continue
+        if len(dist_mem) > 10:
+            dist_mem.pop(0)
+            cluster_mem.pop(0)
+            if check_n_stop(dist_mem, cluster_mem):
+                print("Stopped at iteration #", i)
+                break
 
     # Display the final results
     for i in range(len(newCentroids)):
